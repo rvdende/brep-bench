@@ -180,7 +180,13 @@ fn measured(k: &DefaultKernel, body: BodyId, out: &str) -> Result<String, Refusa
     let (volume, area) = (m.volume, m.surface_area);
     lap("mass", &mut t);
     let native = k.get(body)?;
-    let valid = native.check_with(CheckLevel::Full).is_empty();
+    let issues = native.check_with(CheckLevel::Full);
+    if std::env::var_os("BREP_CHECK").is_some() {
+        for i in issues.iter().take(8) {
+            eprintln!("check: {i}");
+        }
+    }
+    let valid = issues.is_empty();
     lap("check", &mut t);
     let mut faces = BTreeMap::new();
     for f in native.faces() {
@@ -247,6 +253,22 @@ fn main() -> ExitCode {
             env!("KERNEL_VERSION"),
             env!("CARGO_PKG_VERSION")
         );
+        return ExitCode::SUCCESS;
+    }
+    // (Profiling: every case built and measured in turn, `ROUNDS` times, in one process.)
+    if let [_, all, out] = &args[..]
+        && all == "--all"
+    {
+        cadrs_kernel::native::keep_meshes(false);
+        let rounds = std::env::var("ROUNDS").ok().and_then(|n| n.parse().ok()).unwrap_or(1);
+        for _ in 0..rounds {
+            for (_, build) in cases::CASES {
+                let mut k = DefaultKernel::new();
+                if let Ok(body) = build(&mut k) {
+                    let _ = measured(&k, body, out);
+                }
+            }
+        }
         return ExitCode::SUCCESS;
     }
     let [_, case, out] = &args[..] else {

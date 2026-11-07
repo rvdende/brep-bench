@@ -3,8 +3,11 @@
 //!
 //! The cup is the parabola x² = 10z of the xz plane, from its vertex to (√50, 5), drawn as the
 //! quadratic Bézier it is (its tangents meet at (√50/2, 0)), closed by the top edge and the axis,
-//! and turned a whole turn about z. The ball is cadrs's sphere primitive, its poles on the z axis.
-use crate::bench::{ball, p3, union, xz};
+//! and turned a whole turn about z. The ball is cadrs's sphere primitive, its poles on the z axis
+//! and its seam toward +y: away from the cup's (the parabola turned, in the xz plane), whose seam
+//! it would otherwise touch to fourth order out of the point of contact, the two within 10⁻⁷ of
+//! each other for a tenth of a unit (a boolean then sees them overlap there).
+use crate::bench::{ball_oriented, p3, union, v3, xz};
 use crate::shared::geometry::{turned_about_z, Section};
 use crate::Refusal;
 use cadrs_kernel::{BodyId, DefaultKernel};
@@ -16,6 +19,6 @@ pub fn build(k: &mut DefaultKernel) -> Result<BodyId, Refusal> {
         .line((a, 5.0), (0.0, 5.0))
         .line((0.0, 5.0), (0.0, 0.0));
     let cup = turned_about_z(k, &section)?;
-    let b = ball(k, p3(0.0, 0.0, 5.0), 5.0)?;
+    let b = ball_oriented(k, p3(0.0, 0.0, 5.0), 5.0, v3(0.0, 0.0, 1.0), v3(0.0, 1.0, 0.0))?;
     union(k, cup, b)
 }
