@@ -1,16 +1,135 @@
-//! What the cadrs implementations of the swept cases share: the rod several of them groove, and
-//! the solid a torus fills as it slides along the z axis.
-//!
-//! cadrs has no sweep of a solid (its `sweep_body` carries points, wires and sheets one kind
-//! higher, never a solid), so a swept solid is built from what it is by elementary geometry,
-//! as the cases' descriptions give it.
-use crate::bench::{arc, chain, cylinder, extrude, line, p2, p3, sketch, torus, v3, xy, P3};
+//! What the cadrs implementations of the swept cases share: the rod and the ring sector several of
+//! them groove, a slide, a swing or a screw of a solid (cadrs's sweep of a solid,
+//! `Kernel::sweep_solid`), and the solid a torus fills as it slides along the z axis.
+use crate::bench::{arc, axis, chain, cylinder, extrude, line, p2, p3, plane, sketch, torus, v3, xy, P3, V3};
+use crate::shared::sweep::first;
 use crate::Refusal;
-use cadrs_kernel::{BodyId, DefaultKernel};
+use cadrs_kernel::{Axis, BodyId, CylindricalBox, DefaultKernel, Kernel, RigidStep, SolidMotion};
 
 /// The rod: the cylinder of radius 5 about the z axis from z = 0 to z = 20.
 pub fn rod(k: &mut DefaultKernel) -> Result<BodyId, Refusal> {
     cylinder(k, p3(0.0, 0.0, 0.0), v3(0.0, 0.0, 1.0), 5.0, 20.0)
+}
+
+/// The block of a ring sector about the z axis: everything between the radii `radii`, the
+/// heights `heights` and the polar angles `angles` (degrees, from +x toward +y), cadrs's
+/// cylindrical box (an annular sector extruded).
+pub fn ring_sector(
+    k: &mut DefaultKernel,
+    radii: (f64, f64),
+    heights: (f64, f64),
+    angles: (f64, f64),
+) -> Result<BodyId, Refusal> {
+    let start = angles.0.rem_euclid(360.0);
+    let spec = CylindricalBox {
+        frame: plane(p3(0.0, 0.0, heights.0), v3(1.0, 0.0, 0.0), v3(0.0, 0.0, 1.0)),
+        length: heights.1 - heights.0,
+        inner_radius: radii.0,
+        outer_radius: radii.1,
+        start_angle: start.to_radians(),
+        end_angle: (start + angles.1 - angles.0).to_radians(),
+    };
+    first(k.cylindrical_box(&spec)?)
+}
+
+/// The z axis.
+pub fn z_axis() -> Axis {
+    axis(p3(0.0, 0.0, 0.0), v3(0.0, 0.0, 1.0))
+}
+
+/// Everything `tool` passes through as it slides without turning along `v` (cadrs's sweep of a
+/// solid, one slide).
+pub fn slid(k: &mut DefaultKernel, tool: BodyId, v: V3) -> Result<BodyId, Refusal> {
+    let steps = vec![RigidStep::Slide { from: V3::zeros(), to: v }];
+    first(k.sweep_solid(tool, &SolidMotion::Rigid { steps })?)
+}
+
+/// Everything `tool` (drawn where it is at a turn of 0) passes through as it turns rigidly about
+/// `about`, right-handed, from `from` to `to` degrees (cadrs's sweep of a solid, one turn).
+pub fn swung(k: &mut DefaultKernel, tool: BodyId, about: Axis, from: f64, to: f64) -> Result<BodyId, Refusal> {
+    let steps = vec![RigidStep::Turn { axis: about, from: from.to_radians(), to: to.to_radians() }];
+    first(k.sweep_solid(tool, &SolidMotion::Rigid { steps })?)
+}
+
+/// Everything `tool` (drawn where it is at a turn of 0) passes through as it is screwed about
+/// `about`: turned right-handed from `from` to `to` degrees while rising `lead` along the axis a
+/// whole turn, rigidly (cadrs's sweep of a solid: a turn and a slide along its axis at once).
+pub fn screwed(
+    k: &mut DefaultKernel,
+    tool: BodyId,
+    about: Axis,
+    lead: f64,
+    from: f64,
+    to: f64,
+) -> Result<BodyId, Refusal> {
+    let z = about.dir.into_inner();
+    let rise = |deg: f64| z * (lead * deg / 360.0);
+    let steps = vec![
+        RigidStep::Turn { axis: about, from: from.to_radians(), to: to.to_radians() },
+        RigidStep::Slide { from: rise(from), to: rise(to) },
+    ];
+    first(k.sweep_solid(tool, &SolidMotion::Rigid { steps })?)
+}
+
+/// Everything `tool` (drawn in the frame where `path` starts) passes through as a frame rides
+/// `path` upright: its origin the path's point, its x axis the path's tangent, its z axis up
+/// (cadrs's sweep of a solid along a path, meshed).
+pub fn carried(k: &mut DefaultKernel, tool: BodyId, path: Vec<cadrs_kernel::PathCurve>) -> Result<BodyId, Refusal> {
+    let motion = SolidMotion::Path { path, up: crate::bench::unit(v3(0.0, 0.0, 1.0)) };
+    first(k.sweep_solid(tool, &motion)?)
+}
+
+/// The cubic Bézier curve in the plane z = 0 on these control points, as a path.
+pub fn bezier_path(poles: [(f64, f64); 4]) -> Vec<cadrs_kernel::PathCurve> {
+    vec![cadrs_kernel::PathCurve::Bezier3 {
+        poles: poles.iter().map(|&(x, y)| p3(x, y, 0.0)).collect(),
+        weights: vec![],
+    }]
+}
+
+/// `target` less everything `tool` passes through as it moves by `motion` (cadrs's cut by a swept
+/// solid: the exact sweep cut from it, else the region inside it and in none of the tool's
+/// places, meshed).
+pub fn cut_swept(k: &mut DefaultKernel, target: BodyId, tool: BodyId, motion: &SolidMotion) -> Result<BodyId, Refusal> {
+    first(k.cut_swept(target, tool, motion)?)
+}
+
+/// The motion of [`slid`].
+pub fn slide(v: V3) -> SolidMotion {
+    SolidMotion::Rigid { steps: vec![RigidStep::Slide { from: V3::zeros(), to: v }] }
+}
+
+/// The motion of [`swung`].
+pub fn swing(about: Axis, from: f64, to: f64) -> SolidMotion {
+    SolidMotion::Rigid { steps: vec![RigidStep::Turn { axis: about, from: from.to_radians(), to: to.to_radians() }] }
+}
+
+/// The motion of [`screwed`].
+pub fn screw(about: Axis, lead: f64, from: f64, to: f64) -> SolidMotion {
+    let z = about.dir.into_inner();
+    let rise = |deg: f64| z * (lead * deg / 360.0);
+    SolidMotion::Rigid {
+        steps: vec![
+            RigidStep::Turn { axis: about, from: from.to_radians(), to: to.to_radians() },
+            RigidStep::Slide { from: rise(from), to: rise(to) },
+        ],
+    }
+}
+
+/// The motion of [`carried`].
+pub fn carry(path: Vec<cadrs_kernel::PathCurve>) -> SolidMotion {
+    SolidMotion::Path { path, up: crate::bench::unit(v3(0.0, 0.0, 1.0)) }
+}
+
+/// The part of `tool` within `radius` of the z axis (cadrs's boolean common with a cylinder about
+/// it). A turn or screw about the z axis maps the cylinder of any radius about it onto itself, so
+/// what the tool passes through within the rod (radius 5) is what this part of it passes through
+/// there, for any radius past 5.
+pub fn near_axis(k: &mut DefaultKernel, tool: BodyId, radius: f64) -> Result<BodyId, Refusal> {
+    let bb = k.bounding_box(tool)?;
+    let (z0, z1) = (bb.min.z - 1.0, bb.max.z + 1.0);
+    let c = cylinder(k, p3(0.0, 0.0, z0), v3(0.0, 0.0, 1.0), radius, z1 - z0)?;
+    crate::bench::common(k, tool, c)
 }
 
 /// What the torus about the axis through `center` parallel to the y axis, of radii `major` and

@@ -102,7 +102,7 @@ impl Section {
         self
     }
 
-    fn sketch(&self) -> cadrs_kernel::Profile {
+    pub fn sketch(&self) -> cadrs_kernel::Profile {
         crate::bench::sketch(self.plane, vec![Loop { curves: self.curves.clone() }])
     }
 

@@ -5,6 +5,7 @@ pub mod chamfer;
 pub mod draft;
 pub mod edit;
 pub mod feature;
+pub mod fill;
 pub mod fillet;
 pub mod geometry;
 pub mod loft;
