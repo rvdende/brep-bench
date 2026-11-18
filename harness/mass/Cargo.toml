@@ -1,0 +1,18 @@
+[package]
+name = "brep-bench-mass"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "The mass properties of the solid in a STEP file, from its exact geometry."
+publish = false
+
+[[bin]]
+name = "mass"
+path = "src/main.rs"
+
+# No crates: the harness stays free of dependencies.
+[dependencies]
+
+[profile.release]
+opt-level = 3
+debug = 0

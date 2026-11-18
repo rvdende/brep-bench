@@ -15,7 +15,7 @@ What is timed is a kernel's shortest path to a boundary representation, and no m
 run once: a kernel whose runner writes STEP (`"step": true` in kernels.json) is given OUT.step as
 well as OUT.stl, and a STEP written is its whole answer: the runner neither measures nor meshes
 the solid. The file is then graded, untimed: harness/step.py reads what it is made of, and the
-harness measures its solid itself (harness/mass.py): its volume and area, graded to 1e-6, and its
+harness measures its solid itself (harness/mass/): its volume and area, graded to 1e-6, and its
 centre of gravity and inertia, shown. Open CASCADE (harness/occt.py), where it is installed,
 meshes the file for the drawings and the viewer; nothing it makes is graded. Where there is no
 STEP (a kernel with no writer, or a writer that declined the solid), or the harness cannot measure
@@ -260,25 +260,67 @@ def argv(command, cid, out_stl, out_step):
     return command + [cid, out_stl] + ([out_step] if out_step else [])
 
 
-# the harness's own measurer of a STEP file's solid, run in a process of its own (it is given a
-# time limit, as a run is)
-MASS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mass.py")
+# the harness's own measurer of a STEP file's solid (harness/mass/, Rust), run in a process of its
+# own (it is given a time limit, as a run is); built here where it is not, or is older than its
+# sources: cargo build --release --manifest-path harness/mass/Cargo.toml
+MASS_RS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mass")
+MASS_BIN = os.path.join(MASS_RS, "target", "release", "mass.exe" if os.name == "nt" else "mass")
+
+
+def mass_sources():
+    """The measurer's source files (harness/mass/), in order."""
+    src = os.path.join(MASS_RS, "src")
+    try:
+        names = sorted(n for n in os.listdir(src) if n.endswith(".rs"))
+    except OSError:
+        names = []
+    return [os.path.join(MASS_RS, "Cargo.toml")] + [os.path.join(src, n) for n in names]
+
+
+def mass_built():
+    """Whether the measurer is built and no older than its sources (a stale one would measure by
+    a method the sources no longer say)."""
+    try:
+        built = os.path.getmtime(MASS_BIN)
+        return os.access(MASS_BIN, os.X_OK) and all(os.path.getmtime(p) <= built
+                                                    for p in mass_sources())
+    except OSError:
+        return False
+
+
+@functools.lru_cache(maxsize=None)
+def mass_command():
+    """The measurer's command line, less the file, built first where it is not built or is stale;
+    or a str, why it cannot be run (no cargo, or the build failed)."""
+    if not mass_built():
+        cargo = shutil.which("cargo")
+        if cargo is None:
+            return "harness/mass is not built, and there is no cargo to build it"
+        p = subprocess.run([cargo, "build", "--release", "--manifest-path",
+                            os.path.join(MASS_RS, "Cargo.toml")], capture_output=True, text=True)
+        if p.returncode != 0 or not mass_built():
+            said_ = (p.stderr.strip().splitlines() or ["no output"])[-1]
+            return f"harness/mass did not build: {said_[:200]}"
+    return [MASS_BIN]
 
 
 def mass_of(out_step, timeout):
-    """The mass properties of the solid in the STEP file at `out_step` (harness/mass.py):
-    {"volume", "area", "centroid", "inertia", ...} (and `by_surface`, the solid with its loops
-    taken by their surfaces' normals, where that differs), or {"invalid": why} where the file
-    holds no solid, or {"error": why} where it cannot measure the file. Untimed."""
+    """The mass properties of the solid in the STEP file at `out_step` (harness/mass/,
+    `mass_command`): {"volume", "area", "centroid", "inertia", ...} (and `by_surface`, the solid
+    with its loops taken by their surfaces' normals, where that differs), or {"invalid": why}
+    where the file holds no solid, or {"error": why} where it cannot measure the file. Untimed."""
+    command = mass_command()
+    if isinstance(command, str):
+        return {"error": command}
     try:
-        p = subprocess.run([sys.executable, MASS, out_step], capture_output=True, text=True,
+        p = subprocess.run(command + [out_step], capture_output=True, text=True,
                            timeout=timeout, cwd=ROOT)
     except subprocess.TimeoutExpired:
         return {"error": f"not measured in {timeout:g} s"}
     answer = last_json(p.stdout)
     if answer is None:
         said_ = (p.stderr.strip().splitlines() or ["no answer"])[-1]
-        return {"error": f"harness/mass.py failed: {said_[:200]}"}
+        return {"error": f"harness/mass failed: {said_[:200]}"}
     return answer
 
 
@@ -300,19 +342,23 @@ JOBS = cores()
 
 
 class MassCache:
-    """What harness/mass.py made of each STEP file a kernel wrote, by the file's SHA-256:
+    """What harness/mass/ made of each STEP file a kernel wrote, by the file's SHA-256:
     results/mass/<kernel>.json, kept from run to run (CI keeps it in a cache of its own), so that
     a file a kernel writes again byte for byte is not measured again. It holds only what this
-    measurer, with this time limit, made of the files: a change to harness/mass.py or
-    harness/step.py, or to the limit, starts it afresh."""
+    measurer, with this time limit, made of the files: a change to harness/mass/'s sources, to
+    harness/step.py or stl.py, or to the limit, starts it afresh."""
 
     def __init__(self, kernel, limit=MASS_TIMEOUT, jobs=JOBS):
         self.limit, self.jobs = limit, jobs
+        mass_command()  # built now, if it must be, and not by each of the jobs at once
         self.path = os.path.join(ROOT, "results", "mass", kernel + ".json")
         digest = hashlib.sha256(f"limit {limit:g}\0".encode())
-        for name in ("mass.py", "step.py", "stl.py"):
-            with open(os.path.join(os.path.dirname(MASS), name), "rb") as f:
+        for name in ("step.py", "stl.py"):
+            with open(os.path.join(os.path.dirname(MASS_RS), name), "rb") as f:
                 digest.update(f.read())
+        for path in mass_sources():
+            with open(path, "rb") as f:
+                digest.update(b"\0" + os.path.basename(path).encode() + b"\0" + f.read())
         self.version = digest.hexdigest()
         self.files = {}
         try:
@@ -397,7 +443,7 @@ BY_SURFACE = ("its STEP's loops run anticlockwise about their surfaces' normals 
 
 def grade_step(case, measured):
     """The outcome of a run whose solid was written as STEP and measured by the harness
-    (`measured`, harness/mass.py's answer; SPEC.md, "Grading"): pass (built for an unsettled
+    (`measured`, harness/mass/'s answer; SPEC.md, "Grading"): pass (built for an unsettled
     case) or wrong."""
     if measured["volume"] < 0:
         return "wrong", ("its STEP's solid is inside out: its faces face into it (its volume "
@@ -829,7 +875,7 @@ def main():
                     "the last results")
     ap.add_argument("--timeout", type=float, default=60)
     ap.add_argument("--mass-timeout", type=float, default=MASS_TIMEOUT,
-                    help="how long harness/mass.py may take over one STEP file before the "
+                    help="how long harness/mass/ may take over one STEP file before the "
                     "runner's own measures are graded instead (default %(default)g s)")
     ap.add_argument("--jobs", type=int, default=JOBS,
                     help="how many STEP files to measure at once, after the timed runs "

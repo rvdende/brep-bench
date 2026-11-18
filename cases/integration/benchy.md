@@ -8,7 +8,7 @@ origin = "#3DBenchy by Daniel Norée (2015), CC0 1.0: its original CAD file as r
 
 [volume]
 value = 15550.999869574227
-exact = "no closed form: the reference's own, as the harness reads its STEP file (harness/mass.py, by its edges' curves, as ISO 10303-42 has them); Open CASCADE, which reads it by curves it fits on the faces, comes to 15550.9534 (3e-6 off)"
+exact = "no closed form: the reference's own, as the harness reads its STEP file (harness/mass/, by its edges' curves, as ISO 10303-42 has them); Open CASCADE, which reads it by curves it fits on the faces, comes to 15550.9534 (3e-6 off)"
 
 [area]
 value = 9432.403647291821

@@ -19,8 +19,9 @@ changed decides it:
   every case again. A change to which kernel is the reference draws every case again; a change to
   what the board only shows (its licence, languages, note, the files its binary's size counts)
   runs nothing;
-- how a run is made, measured or graded (harness/run.py, measure.py, mass.py, occt.py, stl.py,
-  step.py, suite.py, build.py): the whole suite runs again;
+- how a run is made, measured or graded (harness/run.py, measure.py, occt.py, stl.py, step.py,
+  suite.py, build.py, and the measurer, harness/mass/): the whole suite runs
+  again;
 - anything else (the site, the drawings' code, the docs): nothing runs, the site is only made
   again. A change to harness/draw/ draws every case again.
 
@@ -41,8 +42,10 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from suite import ROOT, cases, implements, kernels  # noqa: E402
 
-WHOLE_SUITE = {"harness/run.py", "harness/measure.py", "harness/mass.py", "harness/occt.py",
+WHOLE_SUITE = {"harness/run.py", "harness/measure.py", "harness/occt.py",
                "harness/stl.py", "harness/step.py", "harness/suite.py", "harness/build.py"}
+# the measurer of a STEP file's solid (Rust): a change to it is a change to how a run is measured
+MEASURER = ("harness/mass/src/", "harness/mass/Cargo.toml")
 # the code that draws the cases: a change under it draws every case again
 REDRAW = "harness/draw/"
 # a kernel's flags of its implementations (its workarounds, its elegant ones), which the site reads
@@ -111,7 +114,7 @@ def plan(paths, results_dir, old_kernels=None, described=()):
     among `paths` changed only in their description, which need nothing run."""
     runnable = [k for k in kernels() if k.get("command")]
     ids = [c["id"] for c in cases()]
-    if paths is None or WHOLE_SUITE & set(paths):
+    if paths is None or WHOLE_SUITE & set(paths) or any(p.startswith(MEASURER) for p in paths):
         return {"full": True}
     if "kernels.json" in paths and old_kernels is None:
         return {"full": True}

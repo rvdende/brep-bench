@@ -832,7 +832,7 @@ def entry(en, exp):
                    f"area are its triangles', graded to {FROM_MESH:g}.</p>")
     elif row and row.get("measured") == "step":
         out.append("<p class=muted>Its volume and area are its STEP file's, as the harness "
-                   "measures them from the file's exact geometry (harness/mass.py); its triangles "
+                   "measures them from the file's exact geometry (harness/mass/); its triangles "
                    "are Open CASCADE's mesh of the file, for the pictures.</p>")
 
     out.append("<h3>Data</h3>")
@@ -1098,7 +1098,7 @@ function parts(body) {
 }
 
 // The millimetres in the file's unit of length (Open CASCADE gives the faces in millimetres),
-// as harness/mass.py's Model._unit reads it; null where it does not know it
+// as harness/mass/'s Model::unit reads it; null where it does not know it
 const PREFIX = { '$': 1, '.MILLI.': 1e-3, '.CENTI.': 1e-2, '.DECI.': 1e-1, '.KILO.': 1e3,
                  '.MICRO.': 1e-6, '.NANO.': 1e-9 };
 function millimetres(entities, at) {
@@ -1125,7 +1125,7 @@ function millimetres(entities, at) {
 }
 
 // The knot spans of a B-spline's parameter, its patches along it: the distinct knots in its
-// domain, less one. A Bézier's is one (as harness/mass.py's implicit_knots has it); a uniform
+// domain, less one. A Bézier's is one (as harness/mass/'s implicit_knots has it); a uniform
 // one's, its control points less its degree.
 function spans(bezier, poles, degree, mults, knots) {
   if (bezier) return 1;

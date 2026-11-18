@@ -47,7 +47,7 @@ def check(tris):
     edges), its *volume* is the divergence theorem's (positive when the normals face out), and its
     *area* is its triangles' summed. Its *centroid* and its *inertia* (of unit density, about the
     centroid) are those of the polyhedron the triangles bound, summed over the tetrahedra each makes
-    with a point; as harness/mass.py gives them of a STEP file's solid.
+    with a point; as harness/mass/ gives them of a STEP file's solid.
     """
     index = {}
     def vid(p):

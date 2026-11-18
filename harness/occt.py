@@ -1,6 +1,6 @@
 """Open CASCADE's triangles of the solid in a STEP file, for the drawings and the case page's viewer,
 through the OCP Python bindings (`cadquery-ocp`). Nothing it makes is graded: the harness measures
-a STEP file's solid itself (harness/mass.py).
+a STEP file's solid itself (harness/mass/).
 
     python3 harness/occt.py STEP STL [THICKNESS]
 

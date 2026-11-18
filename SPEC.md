@@ -63,7 +63,7 @@ The header may also say where a case came from: `origin = "geomsolver rust/examp
 
 Beside `[volume]` and `[area]`, a header may give the solid's `[centroid]`, its centre of gravity,
 and its `[inertia]`, its inertia tensor about the centroid, of unit density (the products of
-inertia negated, as `harness/mass.py` gives it), each a `value` and an `exact`; they are graded
+inertia negated, as `harness/mass/` gives it), each a `value` and an `exact`; they are graded
 like the volume and the area. And it may give its own `tolerance`, in place of the 1e-6 below,
 where its answer cannot be known closer (a reference shape's file, stated to an uncertainty).
 
@@ -170,7 +170,7 @@ and built from, and `reference_mesh = "benchy.stl.gz"`, its triangles, which the
 reads. The solid is the reference's, as it lies in the file; the description says where it comes
 from, how it lies, and how its triangles were made.
 
-Its answer is the reference's own measures, as the harness reads the file (`harness/mass.py`):
+Its answer is the reference's own measures, as the harness reads the file (`harness/mass/`):
 its volume, area, centroid and inertia tensor, each written with what a second, independent
 reader of the file makes of it. A pass is the reference itself. Where the file is stated only to
 an uncertainty, so that two careful readings of it disagree, the case's `tolerance` is set above
@@ -344,7 +344,7 @@ beside **refused** and **failed** where there is no file to judge. A file that i
 solid (open, triangles or empty) is a wrong answer; the verdict itself is shown, and a faceted file
 is graded like any other, on its measures.
 
-The harness then measures the file's solid itself (`harness/mass.py`), untimed: its volume and
+The harness then measures the file's solid itself (`harness/mass/`), untimed: its volume and
 area, which are graded as a runner's measures are, and its centre of gravity and its moments of
 inertia (of unit density, about the centre), which are shown. It reads the exact geometry the file
 holds, surface by surface and edge by edge, and integrates over each face by the divergence and
