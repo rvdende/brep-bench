@@ -336,6 +336,58 @@ fn timed(reply: &impl std::fmt::Display, clock: &Clock) -> String {
     }
 }
 
+/// Loads the runner whole: every page of the program and its libraries read into this process's
+/// memory, as SPEC.md has a runner load all it will need before its first pause. A program's
+/// pages are otherwise mapped in one at a time as the code on them first runs, which is loading
+/// the runner all the same, only timed as the kernel's.
+#[cfg(target_os = "linux")]
+fn load_image() {
+    unsafe extern "C" {
+        fn madvise(addr: *mut std::ffi::c_void, len: usize, advice: std::ffi::c_int) -> std::ffi::c_int;
+    }
+    const MADV_POPULATE_READ: std::ffi::c_int = 22;
+    let Ok(maps) = std::fs::read_to_string("/proc/self/maps") else { return };
+    for line in maps.lines() {
+        // "start-end perms offset dev inode path": the file's own pages, read-only or code
+        let mut fields = line.split_ascii_whitespace();
+        let (Some(range), Some(perms)) = (fields.next(), fields.next()) else { continue };
+        let path = fields.nth(3).unwrap_or("");
+        if !path.starts_with('/') || !perms.starts_with('r') || perms.as_bytes()[1] == b'w' {
+            continue;
+        }
+        let Some((a, b)) = range.split_once('-') else { continue };
+        let (Ok(a), Ok(b)) = (usize::from_str_radix(a, 16), usize::from_str_radix(b, 16)) else { continue };
+        // SAFETY: the range is a mapping of this process, and populating it changes none of it
+        if unsafe { madvise(a as *mut _, b - a, MADV_POPULATE_READ) } != 0 {
+            // (An older Linux: a byte of each page read.)
+            let mut p = a;
+            while p < b {
+                // SAFETY: p lies in a readable mapping of this process
+                std::hint::black_box(unsafe { std::ptr::read_volatile(p as *const u8) });
+                p += 4096;
+            }
+        }
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn load_image() {}
+
+/// (Profiling: where the heap ends.)
+#[cfg(unix)]
+fn heap_top() -> usize {
+    unsafe extern "C" {
+        fn sbrk(by: isize) -> *mut std::ffi::c_void;
+    }
+    // SAFETY: sbrk(0) only reads the break
+    unsafe { sbrk(0) as usize }
+}
+
+#[cfg(not(unix))]
+fn heap_top() -> usize {
+    0
+}
+
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
     if args.get(1).map(String::as_str) == Some("--version") {
@@ -374,6 +426,9 @@ fn main() -> ExitCode {
         eprintln!("no implementation of `{case}`");
         return ExitCode::from(2);
     };
+    if std::env::var_os("BREP_NO_LOAD").is_none() {
+        load_image();
+    }
     pause();
     let clock = Clock::start();
     // Each body is meshed once: no faces' meshes kept for a next time.
@@ -393,11 +448,28 @@ fn main() -> ExitCode {
             }
         }
     }
+    // (Profiling: the timed path itself over and over, each time in a new session: the build
+    // and its STEP written.)
+    if let (Some(n), Some(step)) =
+        (std::env::var("BREP_REPEAT_STEP").ok().and_then(|n| n.parse::<usize>().ok()), out_step)
+    {
+        let t = std::time::Instant::now();
+        for _ in 0..n {
+            let mut k = DefaultKernel::new();
+            if let Ok(body) = build(&mut k) {
+                let _ = measured(&k, body, out, Some(step));
+            }
+        }
+        eprintln!("each: {:.1} us", t.elapsed().as_secs_f64() * 1e6 / n as f64);
+    }
     let mut k = DefaultKernel::new();
     let t = std::time::Instant::now();
+    let heap0 = heap_top();
     let built = build(&mut k);
     if std::env::var_os("BREP_TIMING").is_some() {
-        eprintln!("build: {:.1} ms", t.elapsed().as_secs_f64() * 1e3);
+        eprintln!("build: {:.3} ms", t.elapsed().as_secs_f64() * 1e3);
+        eprintln!("heap grown: {} KB", (heap_top() - heap0) / 1024);
+        eprintln!("threads: {}", std::fs::read_dir("/proc/self/task").map_or(0, |d| d.count()));
     }
     // (Profiling: the measures and the mesh made over and over, to sample.)
     if let (Ok(body), Some(n)) = (&built, std::env::var("BREP_REPEAT").ok().and_then(|n| n.parse::<usize>().ok())) {
